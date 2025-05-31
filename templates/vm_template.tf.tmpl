@@ -1,0 +1,137 @@
+terraform {
+  required_providers {
+    azurestack = {
+      source  = "hashicorp/azurestack"
+      version = "=1.0.0"
+    }
+  }
+}
+
+provider "azurestack" {
+  features {}
+  tenant_id       = "{{tenant_id}}"
+  subscription_id = "{{subscription_id}}"
+  client_id       = "{{client_id}}"
+  client_secret   = "{{client_secret}}"
+  metadata_host   = "https://management.dc2.xpressazure.com/"
+}
+
+locals {
+  project_net_id = "{{project_net_id}}"
+}
+
+resource "azurestack_network_security_group" "nsg" {
+  name                = "{{project_name}}-nsg"
+  location            = "{{location}}"
+  resource_group_name = "{{resource_group_name}}"
+
+  security_rule {
+    name                       = "Allow-HTTP"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Allow-HTTPS"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Allow-SSH"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  {{backend_ports_rules}}
+}
+
+resource "azurestack_virtual_network" "vnet" {
+  name                = "{{project_name}}-vnet"
+  location            = "{{location}}"
+  resource_group_name = "{{resource_group_name}}"
+  address_space       = ["10.${local.project_net_id}.0.0/16"]
+}
+
+resource "azurestack_subnet" "subnet" {
+  name                 = "{{project_name}}-subnet"
+  resource_group_name  = "{{resource_group_name}}"
+  virtual_network_name = azurestack_virtual_network.vnet.name
+  address_prefix       = "10.${local.project_net_id}.1.0/24"
+}
+
+resource "azurestack_public_ip" "public_ip" {
+  name                = "{{project_name}}-public-ip"
+  location            = "{{location}}"
+  resource_group_name = "{{resource_group_name}}"
+  allocation_method   = "Static"
+  sku                 = "Basic"
+  domain_name_label   = "{{project_name}}"
+}
+
+resource "azurestack_network_interface" "nic" {
+  name                = "{{project_name}}-nic"
+  location            = "{{location}}"
+  resource_group_name = "{{resource_group_name}}"
+
+  ip_configuration {
+    name                          = "ipconfig"
+    subnet_id                     = azurestack_subnet.subnet.id
+    private_ip_address_allocation = "Dynamic"
+    private_ip_address_version    = "IPv4"
+    public_ip_address_id          = azurestack_public_ip.public_ip.id
+    primary                       = true
+  }
+}
+
+resource "azurestack_linux_virtual_machine" "vm" {
+  name                  = "{{project_name}}-vm"
+  location              = "{{location}}"
+  resource_group_name   = "{{resource_group_name}}"
+  size                  = "Standard_D8s_v3"
+  network_interface_ids = [azurestack_network_interface.nic.id]
+  admin_username        = "{{quickops_admin_username}}"
+
+  admin_ssh_key {
+    username   = "{{quickops_admin_username}}"
+    public_key = "{{ssh_public_key}}"
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "UbuntuServer"
+    sku       = "18.04-LTS"
+    version   = "latest"
+  }
+}
+
+output "vm_public_ip" {
+  value = azurestack_public_ip.public_ip.ip_address
+}
+
+output "vm_dns" {
+  value = "${azurestack_public_ip.public_ip.domain_name_label}.dc2.cloudapp.xpressazure.com"
+}

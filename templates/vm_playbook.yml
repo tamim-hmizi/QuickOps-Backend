@@ -1,0 +1,167 @@
+- name: Configure VM for project <%= project_name %>
+  hosts: all
+  vars:
+    ansible_host: <%= vm_dns %>
+    ansible_user: <%= quickops_admin_username %>
+    ansible_ssh_private_key_file: id_rsa
+    domain_name: <%= vm_dns %>
+  become: true
+
+  tasks:
+    - name: Update and upgrade packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install required packages
+      apt:
+        name:
+          - docker.io
+          - nginx
+          - certbot
+          - python3-certbot-nginx
+        state: present
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+
+    - name: Enable and start Docker
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Configure Docker daemon for insecure registry
+      copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "insecure-registries" : ["<%= nexus_host %>"]
+          }
+
+    - name: Restart Docker to apply configuration
+      systemd:
+        name: docker
+        state: restarted
+        enabled: true
+
+    - name: Docker login to Nexus
+      shell: echo "<%= nexus_password %>" | docker login <%= nexus_host %> -u <%= nexus_username %> --password-stdin
+
+    - name: Remove all containers (dev-only cleanup step)
+      shell: docker rm -f $(docker ps -aq) || true
+      ignore_errors: true
+
+    - name: Create Docker network if not exists
+      community.docker.docker_network:
+        name: quickops-net
+        state: present
+
+    - name: Ensure MongoDB data directory exists
+      file:
+        path: /opt/docker-data/mongo
+        state: directory
+        mode: '0755'
+
+    - name: Run MongoDB container
+      community.docker.docker_container:
+        name: mongo
+        image: mongo:6.0
+        state: started
+        restart_policy: always
+        published_ports:
+          - "27017:27017"
+        volumes:
+          - /opt/docker-data/mongo:/data/db
+        network_mode: quickops-net
+
+    - name: Ensure MySQL data directory exists
+      file:
+        path: /opt/docker-data/mysql
+        state: directory
+        mode: '0755'
+
+    - name: Run MySQL container
+      community.docker.docker_container:
+        name: mysql
+        image: mysql:5.7
+        state: started
+        restart_policy: always
+        published_ports:
+          - "3306:3306"
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        volumes:
+          - /opt/docker-data/mysql:/var/lib/mysql
+        network_mode: quickops-net
+
+    - name: Run frontend container
+      community.docker.docker_container:
+        name: frontend
+        image: "<%= frontend_image %>"
+        state: started
+        restart_policy: always
+        published_ports:
+          - "3000:3000"
+        env:
+          PORT: "3000"
+          VITE_API_URL: http://{{ domain_name }}:5000/api
+        image_name_mismatch: recreate
+        network_mode: quickops-net
+
+<% backends.forEach(function(b, index) { const port = 5000 + index; %>
+    - name: Remove existing <%= b.name %> container if it exists
+      community.docker.docker_container:
+        name: "<%= b.name %>"
+        state: absent
+        force_kill: true
+        keep_volumes: false
+
+    - name: Run <%= b.name %> container
+      community.docker.docker_container:
+        name: "<%= b.name %>"
+        image: "<%= b.image %>"
+        state: started
+        restart_policy: always
+        image_name_mismatch: recreate
+        <% if (index === 0) { %>
+        published_ports:
+          - "5000:5000"
+        <% } %>
+        network_mode: quickops-net
+<% }); %>
+
+    - name: Configure Nginx reverse proxy
+      copy:
+        dest: /etc/nginx/sites-available/default
+        content: |
+          server {
+              listen 80;
+              server_name <%= vm_dns %>;
+
+              location / {
+                  proxy_pass http://localhost:3000;
+              }
+
+              location /api/ {
+                  proxy_pass http://localhost:5000/api/;
+              }
+<% backends.forEach(function(b, index) { const port = 5000 + index; %>
+              # location /<%= b.name %>/ {
+              #     proxy_pass http://localhost:<%= port %>/api/;
+              # }
+<% }); %>
+          }
+
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
+
+    - name: Enable HTTPS with Certbot
+      command: certbot --nginx -n --agree-tos --redirect -d <%= vm_dns %> --email admin@<%= project_name %>.com
+      register: certbot_result
+      failed_when: certbot_result.rc != 0 and 'Certificate not yet due for renewal' not in certbot_result.stderr
