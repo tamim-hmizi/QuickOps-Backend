@@ -20,6 +20,8 @@
   },
   "homepage": "https://github.com/tamim-hmizi/QuickOps-Backend#readme",
   "dependencies": {
+    "@azure/arm-resources": "^6.1.0",
+    "@azure/identity": "^4.10.0",
     "@huggingface/inference": "^3.12.1",
     "axios": "^1.9.0",
     "body-parser": "^2.2.0",

@@ -1,0 +1,368 @@
+- name: Deploy K8s project ecomshop
+  hosts: ecomshop.dc2.cloudapp.xpressazure.com
+  vars:
+    ansible_host: ecomshop.dc2.cloudapp.xpressazure.com
+    ansible_user: quickops
+    ansible_ssh_private_key_file: ./id_rsa
+    domain_name: ecomshop.dc2.cloudapp.xpressazure.com
+  become: true
+
+  tasks:
+    - name: Update apt package index
+      apt:
+        update_cache: yes
+
+    - name: Upgrade all packages to the latest version
+      apt:
+        upgrade: dist
+        update_cache: yes
+
+    - name: Autoremove unused packages
+      apt:
+        autoremove: yes
+
+    - name: Install kubectl
+      apt:
+        name: kubectl
+        state: present
+
+    - name: Install docker (required for registry login)
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Create .kube directory
+      file:
+        path: /home/{{ ansible_user }}/.kube
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Copy admin.conf to .kube/config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/{{ ansible_user }}/.kube/config
+        remote_src: yes
+        owner: "{{ ansible_user }}"
+        mode: '0600'
+
+    - name: Login to private registry
+      shell: echo "Kratos.100701" | docker login quickops.dc2.cloudapp.xpressazure.com:5000 -u admin --password-stdin
+
+    - name: Remove existing deployments and services
+      shell: |
+        kubectl delete deployment --all --ignore-not-found
+        kubectl delete service --all --ignore-not-found
+
+    - name: Deploy MongoDB
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: mongo
+        spec:
+          selector:
+            app: mongo
+          ports:
+            - port: 27017
+              targetPort: 27017
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: mongo
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: mongo
+          template:
+            metadata:
+              labels:
+                app: mongo
+            spec:
+              containers:
+                - name: mongo
+                  image: mongo:5
+                  ports:
+                    - containerPort: 27017
+                  args: ["--bind_ip_all"]
+        EOF
+
+    - name: Deploy MySQL
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: mysql
+        spec:
+          selector:
+            app: mysql
+          ports:
+            - port: 3306
+              targetPort: 3306
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: mysql
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: mysql
+          template:
+            metadata:
+              labels:
+                app: mysql
+            spec:
+              containers:
+                - name: mysql
+                  image: mysql:8
+                  env:
+                    - name: MYSQL_ROOT_PASSWORD
+                      value: rootpass
+                    - name: MYSQL_DATABASE
+                      value: ecommerceshop
+                  ports:
+                    - containerPort: 3306
+        EOF
+
+    - name: Deploy frontend
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: frontend
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: frontend
+          template:
+            metadata:
+              labels:
+                app: frontend
+            spec:
+              containers:
+                - name: frontend
+                  image: quickops.dc2.cloudapp.xpressazure.com:5000/EcommerceShop-Frontend-10
+                  ports:
+                    - containerPort: 3000
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: frontend
+        spec:
+          selector:
+            app: frontend
+          ports:
+            - port: 80
+              targetPort: 3000
+        EOF
+
+
+    - name: Deploy backend EcommerceShop-microservice-user
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: user
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: user
+          template:
+            metadata:
+              labels:
+                app: user
+            spec:
+              containers:
+                - name: user
+                  image: quickops.dc2.cloudapp.xpressazure.com:5000/EcommerceShop-microservice-user-10
+                  ports:
+                    - containerPort: 5000
+                  env:
+                    - name: MONGO_URL
+                      value: mongodb://mongo:27017/ecommerceshop
+                    - name: MYSQL_URL
+                      value: mysql://mysql:3306/ecommerceshop
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: user
+        spec:
+          selector:
+            app: user
+          ports:
+            - port: 80
+              targetPort: 5000
+        EOF
+
+    - name: Deploy backend EcommerceShop-microservice-product
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: product
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: product
+          template:
+            metadata:
+              labels:
+                app: product
+            spec:
+              containers:
+                - name: product
+                  image: quickops.dc2.cloudapp.xpressazure.com:5000/EcommerceShop-microservice-product-10
+                  ports:
+                    - containerPort: 5000
+                  env:
+                    - name: MONGO_URL
+                      value: mongodb://mongo:27017/ecommerceshop
+                    - name: MYSQL_URL
+                      value: mysql://mysql:3306/ecommerceshop
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: product
+        spec:
+          selector:
+            app: product
+          ports:
+            - port: 80
+              targetPort: 5000
+        EOF
+
+    - name: Deploy backend EcommerceShop-microservice-Order
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: order
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: order
+          template:
+            metadata:
+              labels:
+                app: order
+            spec:
+              containers:
+                - name: order
+                  image: quickops.dc2.cloudapp.xpressazure.com:5000/EcommerceShop-microservice-Order-10
+                  ports:
+                    - containerPort: 5000
+                  env:
+                    - name: MONGO_URL
+                      value: mongodb://mongo:27017/ecommerceshop
+                    - name: MYSQL_URL
+                      value: mysql://mysql:3306/ecommerceshop
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: order
+        spec:
+          selector:
+            app: order
+          ports:
+            - port: 80
+              targetPort: 5000
+        EOF
+
+    - name: Deploy backend EcommerceShop-microservice-Category
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: category
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: category
+          template:
+            metadata:
+              labels:
+                app: category
+            spec:
+              containers:
+                - name: category
+                  image: quickops.dc2.cloudapp.xpressazure.com:5000/EcommerceShop-microservice-Category-10
+                  ports:
+                    - containerPort: 5000
+                  env:
+                    - name: MONGO_URL
+                      value: mongodb://mongo:27017/ecommerceshop
+                    - name: MYSQL_URL
+                      value: mysql://mysql:3306/ecommerceshop
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: category
+        spec:
+          selector:
+            app: category
+          ports:
+            - port: 80
+              targetPort: 5000
+        EOF
+
+    - name: Deploy backend EcommerceShop-microservice-Cart
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: cart
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: cart
+          template:
+            metadata:
+              labels:
+                app: cart
+            spec:
+              containers:
+                - name: cart
+                  image: quickops.dc2.cloudapp.xpressazure.com:5000/EcommerceShop-microservice-Cart-10
+                  ports:
+                    - containerPort: 5000
+                  env:
+                    - name: MONGO_URL
+                      value: mongodb://mongo:27017/ecommerceshop
+                    - name: MYSQL_URL
+                      value: mysql://mysql:3306/ecommerceshop
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: cart
+        spec:
+          selector:
+            app: cart
+          ports:
+            - port: 80
+              targetPort: 5000
+        EOF
+

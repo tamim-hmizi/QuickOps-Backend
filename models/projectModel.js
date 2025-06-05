@@ -12,7 +12,6 @@ const projectSchema = new mongoose.Schema({
   },
   recommendation: {
     type: String,
-    enum: ["VM", "KUBERNETES"],
   },
   deploymentChoice: {
     type: String,

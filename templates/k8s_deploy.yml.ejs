@@ -1,0 +1,209 @@
+- name: Deploy K8s project <%= projectName %>
+  hosts: <%= dnsLabel %>
+  vars:
+    ansible_host: <%= dnsLabel %>
+    ansible_user: <%= sshUser %>
+    ansible_ssh_private_key_file: <%= sshKeyPath %>
+    domain_name: <%= dnsLabel %>
+  become: true
+
+  tasks:
+    - name: Update apt package index
+      apt:
+        update_cache: yes
+
+    - name: Upgrade all packages to the latest version
+      apt:
+        upgrade: dist
+        update_cache: yes
+
+    - name: Autoremove unused packages
+      apt:
+        autoremove: yes
+
+    - name: Install kubectl
+      apt:
+        name: kubectl
+        state: present
+
+    - name: Install docker (required for registry login)
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Create .kube directory
+      file:
+        path: /home/{{ ansible_user }}/.kube
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Copy admin.conf to .kube/config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/{{ ansible_user }}/.kube/config
+        remote_src: yes
+        owner: "{{ ansible_user }}"
+        mode: '0600'
+
+    - name: Login to private registry
+      shell: echo "<%= registry_pass %>" | docker login <%= registry %> -u <%= registry_user %> --password-stdin
+
+    - name: Remove existing deployments and services
+      shell: |
+        kubectl delete deployment --all --ignore-not-found
+        kubectl delete service --all --ignore-not-found
+
+    - name: Deploy MongoDB
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: mongo
+        spec:
+          selector:
+            app: mongo
+          ports:
+            - port: 27017
+              targetPort: 27017
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: mongo
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: mongo
+          template:
+            metadata:
+              labels:
+                app: mongo
+            spec:
+              containers:
+                - name: mongo
+                  image: mongo:5
+                  ports:
+                    - containerPort: 27017
+                  args: ["--bind_ip_all"]
+        EOF
+
+    - name: Deploy MySQL
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: mysql
+        spec:
+          selector:
+            app: mysql
+          ports:
+            - port: 3306
+              targetPort: 3306
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: mysql
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: mysql
+          template:
+            metadata:
+              labels:
+                app: mysql
+            spec:
+              containers:
+                - name: mysql
+                  image: mysql:8
+                  env:
+                    - name: MYSQL_ROOT_PASSWORD
+                      value: rootpass
+                    - name: MYSQL_DATABASE
+                      value: ecommerceshop
+                  ports:
+                    - containerPort: 3306
+        EOF
+
+    - name: Deploy frontend
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: frontend
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: frontend
+          template:
+            metadata:
+              labels:
+                app: frontend
+            spec:
+              containers:
+                - name: frontend
+                  image: <%= registry %>/<%= frontendName %>-<%= buildId %>
+                  ports:
+                    - containerPort: 3000
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: frontend
+        spec:
+          selector:
+            app: frontend
+          ports:
+            - port: 80
+              targetPort: 3000
+        EOF
+
+<% backendNames.forEach(function(backend) { 
+   const shortName = backend.replace(/^EcommerceShop-microservice-/, "").toLowerCase(); %>
+    - name: Deploy backend <%= backend %>
+      shell: |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: <%= shortName %>
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: <%= shortName %>
+          template:
+            metadata:
+              labels:
+                app: <%= shortName %>
+            spec:
+              containers:
+                - name: <%= shortName %>
+                  image: <%= registry %>/<%= backend %>-<%= buildId %>
+                  ports:
+                    - containerPort: 5000
+                  env:
+                    - name: MONGO_URL
+                      value: mongodb://mongo:27017/ecommerceshop
+                    - name: MYSQL_URL
+                      value: mysql://mysql:3306/ecommerceshop
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: <%= shortName %>
+        spec:
+          selector:
+            app: <%= shortName %>
+          ports:
+            - port: 80
+              targetPort: 5000
+        EOF
+<% }) %>

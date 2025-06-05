@@ -1,10 +1,13 @@
-- name: Configure VM for project <%= project_name %>
+- name: Configure VM for project omhy
   hosts: all
+  collections:
+    - community.docker  # ✅ Required to use docker_container and docker_network
   vars:
-    ansible_host: <%= vm_dns %>
-    ansible_user: <%= quickops_admin_username %>
+    ansible_host: omhy.dc2.cloudapp.xpressazure.com
+    ansible_user: quickops
     ansible_ssh_private_key_file: id_rsa
-    domain_name: <%= vm_dns %>
+    domain_name: omhy.dc2.cloudapp.xpressazure.com
+    ansible_python_interpreter: /usr/bin/python3.6
   become: true
   tasks:
     - name: Update and upgrade packages
@@ -38,7 +41,7 @@
         dest: /etc/docker/daemon.json
         content: |
           {
-            "insecure-registries": ["<%= nexus_host %>"]
+            "insecure-registries": ["quickops.dc2.cloudapp.xpressazure.com:5000"]
           }
 
     - name: Restart Docker to apply configuration
@@ -48,7 +51,7 @@
         enabled: true
 
     - name: Docker login to Nexus
-      shell: echo "<%= nexus_password %>" | docker login <%= nexus_host %> -u <%= nexus_username %> --password-stdin
+      shell: echo "Kratos.100701" | docker login quickops.dc2.cloudapp.xpressazure.com:5000 -u admin --password-stdin
 
     - name: Remove all containers (dev-only cleanup step)
       shell: docker rm -f $(docker ps -aq) || true
@@ -100,7 +103,7 @@
     - name: Run frontend container
       community.docker.docker_container:
         name: frontend
-        image: "<%= frontend_image %>"
+        image: "quickops.dc2.cloudapp.xpressazure.com:5000/omhy:frontend-79"
         state: started
         restart_policy: always
         published_ports:
@@ -111,25 +114,25 @@
         image_name_mismatch: recreate
         network_mode: quickops-net
 
-<% backends.forEach(function(b, index) { const port = 5000 + index; %>
-    - name: Remove existing <%= b.name %> container if it exists
+
+    - name: Remove existing EcommerceShop-monolithic-backend container if it exists
       community.docker.docker_container:
-        name: "<%= b.name %>"
+        name: "EcommerceShop-monolithic-backend"
         state: absent
         force_kill: true
         keep_volumes: false
 
-    - name: Run <%= b.name %> container
+    - name: Run EcommerceShop-monolithic-backend container
       community.docker.docker_container:
-        name: "<%= b.name %>"
-        image: "<%= b.image %>"
+        name: "EcommerceShop-monolithic-backend"
+        image: "quickops.dc2.cloudapp.xpressazure.com:5000/omhy:EcommerceShop-monolithic-backend-79"
         state: started
         restart_policy: always
         image_name_mismatch: recreate
         published_ports:
-          - "<%= port %>:5000"
+          - "5000:5000"
         network_mode: quickops-net
-<% }); %>
+
 
     - name: Configure Nginx reverse proxy
       copy:
@@ -137,7 +140,7 @@
         content: |
           server {
               listen 80;
-              server_name <%= vm_dns %>;
+              server_name omhy.dc2.cloudapp.xpressazure.com;
 
               location / {
                   proxy_pass http://localhost:3000;
@@ -147,11 +150,11 @@
                   proxy_pass http://localhost:5000/api/;
               }
 
-<% backends.forEach(function(b, index) { const port = 5000 + index; %>
-              # location /<%= b.name %>/ {
-              #     proxy_pass http://localhost:<%= port %>/api/;
+
+              # location /EcommerceShop-monolithic-backend/ {
+              #     proxy_pass http://localhost:5000/api/;
               # }
-<% }); %>
+
           }
 
     - name: Restart Nginx
@@ -160,6 +163,6 @@
         state: restarted
 
     - name: Enable HTTPS with Certbot
-      command: certbot --nginx -n --agree-tos --redirect -d <%= vm_dns %> --email admin@<%= project_name %>.com
+      command: certbot --nginx -n --agree-tos --redirect -d omhy.dc2.cloudapp.xpressazure.com --email admin@omhy.com
       register: certbot_result
       failed_when: certbot_result.rc != 0 and 'Certificate not yet due for renewal' not in certbot_result.stderr

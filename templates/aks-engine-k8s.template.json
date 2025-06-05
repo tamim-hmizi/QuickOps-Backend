@@ -1,0 +1,69 @@
+{
+  "apiVersion": "vlabs",
+  "location": "<%= location %>",
+  "name": "<%= projectName %>",
+  "properties": {
+    "orchestratorProfile": {
+      "orchestratorType": "Kubernetes",
+      "orchestratorRelease": "1.30",
+      "orchestratorVersion": "1.30.10",
+      "kubernetesConfig": {
+        "useCloudControllerManager": true,
+        "networkPlugin": "kubenet",
+        "containerRuntime": "containerd",
+        "kubernetesImageBase": "mcr.microsoft.com/",
+        "kubernetesImageBaseType": "mcr",
+        "kubeletConfig": {
+          "--node-status-update-frequency": "1m"
+        },
+        "controllerManagerConfig": {
+          "--node-monitor-grace-period": "5m",
+          "--pod-eviction-timeout": "5m",
+          "--route-reconciliation-period": "1m"
+        }
+      }
+    },
+    "customCloudProfile": {
+      "portalURL": "https://portal.dc2.xpressazure.com/",
+      "identitySystem": "azure_ad",
+      "authenticationMethod": "client_secret"
+    },
+    "masterProfile": {
+      "count": 1,
+      "dnsPrefix": "<%= projectName %>",
+      "distro": "ubuntu-20.04",
+      "vmSize": "Standard_D4s_v3",
+      "vnetCidr": "<%= vnetCidr %>",
+      "firstConsecutiveStaticIP": "<%= firstIP %>"
+    },
+    "agentPoolProfiles": [
+      {
+        "name": "<%= projectName %>",
+        "count": 2,
+        "vmSize": "Standard_D4s_v3",
+        "distro": "ubuntu-20.04",
+        "availabilityProfile": "AvailabilitySet",
+        "osDiskSizeGB": 64,
+        "storageProfile": "ManagedDisks"
+      }
+    ],
+    "linuxProfile": {
+      "adminUsername": "<%= quickops_admin_username %>",
+      "enableUnattendedUpgrades": false,
+      "ssh": {
+        "publicKeys": [
+          {
+            "keyData": "<%= ssh_public_key %>"
+          }
+        ]
+      }
+    },
+    "servicePrincipalProfile": {
+      "clientId": "<%= client_id %>",
+      "secret": "<%= client_secret %>"
+    },
+    "featureFlags": {
+      "enableTelemetry": false
+    }
+  }
+}
