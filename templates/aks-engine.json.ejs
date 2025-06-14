@@ -1,7 +1,7 @@
 {
   "apiVersion": "vlabs",
   "location": "<%= location %>",
-  "name": "<%= projectName %>",
+  "name": "k8s-<%= projectName %>",
   "properties": {
     "orchestratorProfile": {
       "orchestratorType": "Kubernetes",
@@ -30,21 +30,21 @@
     },
     "masterProfile": {
       "count": 1,
-      "dnsPrefix": "<%= projectName %>",
+      "dnsPrefix": "k8s-<%= projectName %>",
       "distro": "ubuntu-20.04",
-      "vmSize": "Standard_D4s_v3",
+      "vmSize": "Standard_D2s_v3",
       "vnetCidr": "<%= vnetCidr %>",
       "firstConsecutiveStaticIP": "<%= firstIP %>"
     },
     "agentPoolProfiles": [
       {
         "name": "<%= projectName %>",
-        "count": 2,
-        "vmSize": "Standard_D4s_v3",
+        "count": 1,
+        "vmSize": "Standard_D2s_v3",
         "distro": "ubuntu-20.04",
         "availabilityProfile": "AvailabilitySet",
         "osDiskSizeGB": 64,
-        "storageProfile": "ManagedDisks"
+        "storageProfile": "ManagedDisks"        
       }
     ],
     "linuxProfile": {

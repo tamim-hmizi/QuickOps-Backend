@@ -23,9 +23,7 @@ const generateAksCluster = async (project) => {
   }
 
   if (existingResources) {
-    console.log(
-      "⏭️ Resources already exist for this project. Skipping AKS deployment."
-    );
+    console.log("⏭️ Resources already exist for this project. Skipping AKS deployment.");
     return { tmpDir: null, skipped: true };
   }
 
@@ -38,10 +36,7 @@ const generateAksCluster = async (project) => {
   const vnetCidr = `10.${cidrSuffix}.0.0/16`;
   const firstIP = `10.${cidrSuffix}.0.5`;
 
-  const templatePath = path.join(
-    __dirname,
-    "../templates/aks-engine-k8s.template.json"
-  );
+  const templatePath = path.join(__dirname, "../templates/aks-engine.json.ejs");
   const rendered = ejs.render(fs.readFileSync(templatePath, "utf-8"), {
     projectName,
     location,

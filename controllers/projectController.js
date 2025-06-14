@@ -26,14 +26,21 @@ const createProject = async (req, res) => {
 
 const updateProject = async (req, res) => {
   const { id } = req.params;
-  const { status, recommendation, deploymentChoice, publicIp, dnsLabel } =
-    req.body;
+  const {
+    status,
+    recommendation,
+    reasoning, // <-- added
+    deploymentChoice,
+    publicIp,
+    dnsLabel,
+  } = req.body;
 
   try {
     const updateData = {};
 
     if (status) updateData.status = status;
     if (recommendation) updateData.recommendation = recommendation;
+    if (reasoning) updateData.reasoning = reasoning; // <-- added
     if (deploymentChoice) updateData.deploymentChoice = deploymentChoice;
     if (publicIp) updateData.publicIp = publicIp;
     if (dnsLabel) updateData.dnsLabel = dnsLabel;
@@ -60,6 +67,7 @@ const updateProject = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 const deleteProject = async (req, res) => {
   const { id } = req.params;

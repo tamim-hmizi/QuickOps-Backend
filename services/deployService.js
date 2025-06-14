@@ -64,8 +64,8 @@ const triggerPipeline = async (project) => {
   const status = stages.some((s) => s.status === "FAILED")
     ? "FAILED"
     : stages.some((s) => s.status === "ABORTED")
-    ? "ABORTED"
-    : "SUCCESS";
+      ? "ABORTED"
+      : "SUCCESS";
 
   if (status !== "SUCCESS") return { buildId, stages, status };
 
@@ -152,15 +152,6 @@ const triggerPipeline = async (project) => {
     // ✅ Build custom DNS label directly
     dnsLabel = `${name.toLowerCase()}.dc2.cloudapp.xpressazure.com`;
 
-    // 🧠 Update MongoDB project entry
-    const mongoProject = await Project.findOne({ name });
-    if (mongoProject) {
-      await projectService.updateProject(mongoProject._id, {
-        publicIp: "", // optional: can be updated later
-        dnsLabel,
-      });
-    }
-
     // 🧹 Clean up AKS Engine files
     const cleanupPaths = [
       tmpDir,
@@ -187,7 +178,7 @@ const triggerPipeline = async (project) => {
       });
 
       execSync(
-        `ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i '${dnsLabel},' ${playbookPath}`,
+        `ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook  -i 'k8s-${dnsLabel},' ${playbookPath}`,
         {
           cwd: tmpDir,
           env: process.env,
@@ -200,11 +191,61 @@ const triggerPipeline = async (project) => {
       console.error("❌ Ansible K8s failed:", err.message);
       throw err;
     }
+    // 5.1 Update Ingress Controller Public IP and DNS
+    try {
+      console.log("🌐 Fetching public IP for Ingress Controller...");
+
+      // Fetch public IPs that contain the project name (and not 'k8s')
+      const publicIpInfoJson = execSync(
+        `az network public-ip list --resource-group ${process.env.resource_group_name} --query "[?contains(name, '${name.toLowerCase()}')]" --output json`,
+        { encoding: "utf-8" }
+      );
+
+      const publicIps = JSON.parse(publicIpInfoJson);
+
+      if (!publicIps.length) throw new Error("No matching public IP found.");
+
+      // Filter out the IPs that contain "k8s" in the name
+      const filteredPublicIps = publicIps.filter(ip => !ip.name.includes('master'));
+
+      if (filteredPublicIps.length === 0) throw new Error("No matching public IP found after filtering out 'k8s'.");
+
+      const ingressIpObj = filteredPublicIps[0];
+      const ingressIp = ingressIpObj.ipAddress;
+      const publicIpResourceName = ingressIpObj.name;
+
+      console.log(`✅ Found Ingress IP: ${ingressIp} (resource: ${publicIpResourceName})`);
+
+      // Update DNS label to project name (e.g., 'ecomshop')
+      execSync(
+        `az network public-ip update --resource-group ${process.env.resource_group_name} --name ${publicIpResourceName} --dns-name ${name.toLowerCase()}`,
+        { stdio: "inherit" }
+      );
+
+      const updatedDns = `${name.toLowerCase()}.dc2.cloudapp.xpressazure.com`;
+
+      const mongoProject = await Project.findOne({ name });
+      if (mongoProject) {
+        await projectService.updateProject(mongoProject._id, {
+          publicIp: ingressIp,
+          dnsLabel: updatedDns,
+        });
+        console.log("✅ Mongo project updated with ingress IP and DNS.");
+      }
+    } catch (err) {
+      console.error("❌ Failed to update Ingress IP and DNS label:", err.message);
+      throw err;
+    }
+
   }
+
+
+
+
 
   // 6. Prometheus
   try {
-    await updatePrometheusTargets(name, dnsLabel, backendRepos);
+    await updatePrometheusTargets(name, dnsLabel, backendRepos, deploymentChoice);
     const promConfigDir = path.join(__dirname, `../prometheus_config_${name}`);
     if (fs.existsSync(promConfigDir)) {
       fs.rmSync(promConfigDir, { recursive: true, force: true });
@@ -218,7 +259,8 @@ const triggerPipeline = async (project) => {
   // 7. Grafana
   try {
     await addPrometheusDatasource();
-    await createDashboard(name, backendRepos);
+    await createDashboard(name, backendRepos, deploymentChoice);
+
 
     const mongoProject = await Project.findOne({ name });
     if (mongoProject) {

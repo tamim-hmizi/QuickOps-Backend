@@ -35,13 +35,23 @@ const addPrometheusDatasource = async () => {
   }
 };
 
-const createDashboard = async (projectName, backendRepos) => {
-  const uid = `dashboard-${projectName}`
-    .toLowerCase()
-    .replace(/[^a-z0-9\-]/g, "-");
+/**
+ * @param {string} projectName
+ * @param {string[]} backendRepos
+ * @param {'VM'|'Kubernetes'} deploymentType
+ */
+const createDashboard = async (projectName, backendRepos, deploymentType = "VM") => {
+  const uid = `dashboard-${projectName}`.toLowerCase().replace(/[^a-z0-9\-]/g, "-");
 
   const panels = backendRepos.map((repoUrl, i) => {
     const repoName = path.basename(repoUrl).replace(/\.git$/, "");
+    const jobLabel = `${projectName}-${repoName}`;
+
+    const targetExpr =
+      deploymentType === "Kubernetes"
+        ? `up{job="${jobLabel}", env="k8s"}`
+        : `up{job="${jobLabel}", env="vm"}`;
+
     return {
       id: i + 1,
       title: `${repoName} Uptime`,
@@ -49,7 +59,7 @@ const createDashboard = async (projectName, backendRepos) => {
       datasource: "Prometheus",
       targets: [
         {
-          expr: `up{job="${projectName}-${repoName}"}`,
+          expr: targetExpr,
           legendFormat: "{{instance}}",
           refId: "A",
         },
@@ -75,7 +85,7 @@ const createDashboard = async (projectName, backendRepos) => {
     dashboard: {
       uid,
       title: `${projectName} Monitoring`,
-      tags: [projectName],
+      tags: [projectName, deploymentType],
       timezone: "browser",
       schemaVersion: 36,
       version: 0,

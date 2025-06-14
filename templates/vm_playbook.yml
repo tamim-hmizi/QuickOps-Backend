@@ -100,7 +100,7 @@
     - name: Run frontend container
       community.docker.docker_container:
         name: frontend
-        image: "<%= frontend_image %>"
+        image: "<%= frontend_image.toLowerCase() %>"
         state: started
         restart_policy: always
         published_ports:
@@ -111,18 +111,21 @@
         image_name_mismatch: recreate
         network_mode: quickops-net
 
-<% backends.forEach(function(b, index) { const port = 5000 + index; %>
-    - name: Remove existing <%= b.name %> container if it exists
+<% backends.forEach(function(b, index) {
+     const port = 5000 + index;
+     const safeName = b.name.toLowerCase();
+%>
+    - name: Remove existing <%= safeName %> container if it exists
       community.docker.docker_container:
-        name: "<%= b.name %>"
+        name: "<%= safeName %>"
         state: absent
         force_kill: true
         keep_volumes: false
 
-    - name: Run <%= b.name %> container
+    - name: Run <%= safeName %> container
       community.docker.docker_container:
-        name: "<%= b.name %>"
-        image: "<%= b.image %>"
+        name: "<%= safeName %>"
+        image: "<%= b.image.toLowerCase() %>"
         state: started
         restart_policy: always
         image_name_mismatch: recreate
@@ -147,10 +150,13 @@
                   proxy_pass http://localhost:5000/api/;
               }
 
-<% backends.forEach(function(b, index) { const port = 5000 + index; %>
-              # location /<%= b.name %>/ {
-              #     proxy_pass http://localhost:<%= port %>/api/;
-              # }
+<% backends.forEach(function(b, index) {
+     const port = 5000 + index;
+     const safeName = b.name.toLowerCase();
+%>
+              location /<%= safeName %>/ {
+                  proxy_pass http://localhost:<%= port %>/api/;
+              }
 <% }); %>
           }
 

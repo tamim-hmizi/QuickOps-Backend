@@ -11,7 +11,10 @@ const projectSchema = new mongoose.Schema({
     default: "not deployed",
   },
   recommendation: {
-    type: String,
+    type: String, // e.g. "Kubernetes" or "VM"
+  },
+  reasoning: {
+    type: String, // explanation for the recommendation
   },
   deploymentChoice: {
     type: String,

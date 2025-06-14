@@ -12,12 +12,9 @@ const PRIVATE_KEY = process.env.ssh_private_key;
 const TARGETS_REMOTE_PATH = "/etc/prometheus/quickops-targets.json";
 const PROM_CONTAINER_NAME = "prometheus";
 
-const updatePrometheusTargets = async (projectName, vmDns, backendRepos) => {
+const updatePrometheusTargets = async (projectName, dnsLabel, backendRepos, deploymentType) => {
   try {
-    const configDir = path.join(
-      __dirname,
-      `../prometheus_config_${projectName}`
-    );
+    const configDir = path.join(__dirname, `../prometheus_config_${projectName}`);
     fs.mkdirSync(configDir, { recursive: true });
 
     const TARGETS_LOCAL_PATH = path.join(configDir, "quickops-targets.json");
@@ -36,15 +33,36 @@ const updatePrometheusTargets = async (projectName, vmDns, backendRepos) => {
       current = JSON.parse(content);
     }
 
-    // Use repo names in job labels
-    const newTargets = backendRepos.map((repoUrl, i) => {
-      const repoName = path.basename(repoUrl).replace(/\.git$/, "");
-      const port = 5000 + i;
-      return {
-        targets: [`${vmDns}:${port}`],
-        labels: { job: `${projectName}-${repoName}` },
-      };
-    });
+    let newTargets = [];
+
+    if (deploymentType === "VM") {
+      newTargets = backendRepos.map((repoUrl, i) => {
+        const repoName = path.basename(repoUrl).replace(/\.git$/, "");
+        const port = 5000 + i;
+        return {
+          targets: [`${dnsLabel}:${port}`],
+          labels: {
+            job: `${projectName}-${repoName}`,
+            env: "vm",
+          },
+        };
+      });
+    } else if (deploymentType === "Kubernetes") {
+      newTargets = backendRepos.map((repoUrl) => {
+        const repoName = path.basename(repoUrl).replace(/\.git$/, "");
+        const shortName = repoName.split("microservice-")[1]?.toLowerCase();
+        const metricsPath = `/api/${shortName}/metrics`;
+
+        return {
+          targets: [`${dnsLabel}`],
+          labels: {
+            job: `${projectName}-${repoName}`,
+            __metrics_path__: metricsPath,
+            env: "k8s",
+          },
+        };
+      });
+    }
 
     const combined = [...current];
     for (const newT of newTargets) {

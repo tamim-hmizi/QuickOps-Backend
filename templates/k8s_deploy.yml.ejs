@@ -1,109 +1,92 @@
 - name: Deploy K8s project <%= projectName %>
-  hosts: <%= dnsLabel %>
-  vars:
-    ansible_host: <%= dnsLabel %>
-    ansible_user: <%= sshUser %>
-    ansible_ssh_private_key_file: <%= sshKeyPath %>
-    domain_name: <%= dnsLabel %>
+  hosts: k8s-<%= dnsLabel %>
   become: true
+  vars:
+    ansible_host: k8s-<%= dnsLabel %>
+    ansible_user: <%= sshUser %>
+    ansible_ssh_private_key_file: ./id_rsa
+    registry: "<%= registry %>"
+    registry_user: "<%= registry_user %>"
+    registry_pass: "<%= registry_pass %>"
+    kubeconfig_path: /home/<%= sshUser %>/.kube/config
+  environment:
+    KUBECONFIG: /home/<%= sshUser %>/.kube/config
 
   tasks:
-    - name: Update apt package index
-      apt:
-        update_cache: yes
 
-    - name: Upgrade all packages to the latest version
-      apt:
-        upgrade: dist
-        update_cache: yes
-
-    - name: Autoremove unused packages
-      apt:
-        autoremove: yes
-
-    - name: Install kubectl
-      apt:
-        name: kubectl
-        state: present
-
-    - name: Install docker (required for registry login)
-      apt:
-        name: docker.io
-        state: present
-
-    - name: Create .kube directory
-      file:
-        path: /home/{{ ansible_user }}/.kube
-        state: directory
-        owner: "{{ ansible_user }}"
-        mode: '0755'
-
-    - name: Copy admin.conf to .kube/config
+    - name: Setup SSH key
       copy:
-        src: /etc/kubernetes/admin.conf
-        dest: /home/{{ ansible_user }}/.kube/config
-        remote_src: yes
-        owner: "{{ ansible_user }}"
+        src: ./id_rsa
+        dest: "/home/<%= sshUser %>/.ssh/id_rsa"
         mode: '0600'
 
-    - name: Login to private registry
-      shell: echo "<%= registry_pass %>" | docker login <%= registry %> -u <%= registry_user %> --password-stdin
-
-    - name: Remove existing deployments and services
+    - name: Patch service account with imagePullSecrets
       shell: |
+        kubectl create secret docker-registry regcred \
+          --docker-server=<%= registry %> \
+          --docker-username=<%= registry_user %> \
+          --docker-password=<%= registry_pass %> \
+          --docker-email=hmizitamim@hotmail.com \
+          --dry-run=client -o yaml | kubectl apply -f -
+        kubectl patch serviceaccount default -p '{"imagePullSecrets": [{"name": "regcred"}]}'
+
+    - name: Install ingress controller
+      shell: |
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
+        kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=180s
+
+    - name: Cleanup old resources
+      shell: |
+        kubectl delete ingress --all --ignore-not-found
         kubectl delete deployment --all --ignore-not-found
         kubectl delete service --all --ignore-not-found
 
     - name: Deploy MongoDB
       shell: |
-        cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: Service
-        metadata:
-          name: mongo
-        spec:
-          selector:
-            app: mongo
-          ports:
-            - port: 27017
-              targetPort: 27017
-        ---
+        kubectl apply -f - <<EOF
         apiVersion: apps/v1
         kind: Deployment
         metadata:
-          name: mongo
+          name: mongodb
         spec:
           replicas: 1
           selector:
             matchLabels:
-              app: mongo
+              app: mongodb
           template:
             metadata:
               labels:
-                app: mongo
+                app: mongodb
             spec:
               containers:
-                - name: mongo
-                  image: mongo:5
+                - name: mongodb
+                  image: mongo:latest
                   ports:
                     - containerPort: 27017
-                  args: ["--bind_ip_all"]
+                  volumeMounts:
+                    - name: mongodb-data
+                      mountPath: /data/db
+              volumes:
+                - name: mongodb-data
+                  hostPath:
+                    path: /mnt/data/mongodb
+                    type: DirectoryOrCreate
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: mongodb
+        spec:
+          selector:
+            app: mongodb
+          ports:
+            - port: 27017
+              targetPort: 27017
         EOF
 
     - name: Deploy MySQL
       shell: |
-        cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: Service
-        metadata:
-          name: mysql
-        spec:
-          selector:
-            app: mysql
-          ports:
-            - port: 3306
-              targetPort: 3306
-        ---
+        kubectl apply -f - <<EOF
         apiVersion: apps/v1
         kind: Deployment
         metadata:
@@ -120,90 +103,179 @@
             spec:
               containers:
                 - name: mysql
-                  image: mysql:8
+                  image: mysql:latest
                   env:
                     - name: MYSQL_ROOT_PASSWORD
-                      value: rootpass
-                    - name: MYSQL_DATABASE
-                      value: ecommerceshop
+                      value: "rootpassword"
                   ports:
                     - containerPort: 3306
+                  volumeMounts:
+                    - name: mysql-data
+                      mountPath: /var/lib/mysql
+              volumes:
+                - name: mysql-data
+                  hostPath:
+                    path: /mnt/data/mysql
+                    type: DirectoryOrCreate
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: mysql
+        spec:
+          selector:
+            app: mysql
+          ports:
+            - port: 3306
+              targetPort: 3306
         EOF
+
+    - name: Wait for DB pods
+      shell: |
+        kubectl wait --for=condition=ready pod -l app=mongodb --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=mysql --timeout=300s
 
     - name: Deploy frontend
-      shell: |
-        cat <<EOF | kubectl apply -f -
-        apiVersion: apps/v1
-        kind: Deployment
-        metadata:
-          name: frontend
-        spec:
-          replicas: 1
-          selector:
-            matchLabels:
-              app: frontend
-          template:
-            metadata:
-              labels:
+      copy:
+        dest: /tmp/frontend.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: frontend
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
                 app: frontend
-            spec:
-              containers:
-                - name: frontend
-                  image: <%= registry %>/<%= frontendName %>-<%= buildId %>
-                  ports:
-                    - containerPort: 3000
-        ---
-        apiVersion: v1
-        kind: Service
-        metadata:
-          name: frontend
-        spec:
-          selector:
-            app: frontend
-          ports:
-            - port: 80
-              targetPort: 3000
-        EOF
+            template:
+              metadata:
+                labels:
+                  app: frontend
+              spec:
+                containers:
+                  - name: frontend
+                    image: <%= registry %>/<%= projectName %>:frontend-<%= buildId %>
+                    ports:
+                      - containerPort: 3000
+                imagePullSecrets:
+                  - name: regcred
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: frontend
+          spec:
+            selector:
+              app: frontend
+            ports:
+              - port: 80
+                targetPort: 3000
 
-<% backendNames.forEach(function(backend) { 
-   const shortName = backend.replace(/^EcommerceShop-microservice-/, "").toLowerCase(); %>
-    - name: Deploy backend <%= backend %>
-      shell: |
-        cat <<EOF | kubectl apply -f -
-        apiVersion: apps/v1
-        kind: Deployment
-        metadata:
-          name: <%= shortName %>
-        spec:
-          replicas: 1
-          selector:
-            matchLabels:
-              app: <%= shortName %>
-          template:
-            metadata:
-              labels:
+    - name: Apply frontend deployment
+      shell: kubectl apply -f /tmp/frontend.yaml
+
+    <% backendNames.forEach(function(backend) {
+       const shortName = backend.split('microservice-')[1].toLowerCase();
+    %>
+    - name: Deploy <%= backend %>
+      copy:
+        dest: /tmp/<%= shortName %>.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: <%= shortName %>
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
                 app: <%= shortName %>
-            spec:
-              containers:
-                - name: <%= shortName %>
-                  image: <%= registry %>/<%= backend %>-<%= buildId %>
-                  ports:
-                    - containerPort: 5000
-                  env:
-                    - name: MONGO_URL
-                      value: mongodb://mongo:27017/ecommerceshop
-                    - name: MYSQL_URL
-                      value: mysql://mysql:3306/ecommerceshop
-        ---
-        apiVersion: v1
-        kind: Service
-        metadata:
-          name: <%= shortName %>
-        spec:
-          selector:
-            app: <%= shortName %>
-          ports:
-            - port: 80
-              targetPort: 5000
-        EOF
-<% }) %>
+            template:
+              metadata:
+                labels:
+                  app: <%= shortName %>
+              spec:
+                containers:
+                  - name: <%= shortName %>
+                    image: <%= registry %>/<%= projectName %>:<%= backend %>-<%= buildId %>
+                    ports:
+                      - containerPort: 5000
+                    env:
+                      - name: MONGO_URI
+                        value: mongodb://mongodb:27017/<%= projectName %>
+                      - name: MYSQL_URI
+                        value: mysql://mysql:3306/<%= projectName %>
+                imagePullSecrets:
+                  - name: regcred
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: <%= shortName %>
+          spec:
+            selector:
+              app: <%= shortName %>
+            ports:
+              - port: 5000
+                targetPort: 5000
+
+    - name: Apply backend deployment <%= backend %>
+      shell: kubectl apply -f /tmp/<%= shortName %>.yaml
+
+    - name: Ingress for <%= shortName %>
+      copy:
+        dest: /tmp/ingress-<%= shortName %>.yaml
+        content: |
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: ingress-<%= shortName %>
+            annotations:
+              nginx.ingress.kubernetes.io/rewrite-target: /api/<%= shortName %>/$2
+              nginx.ingress.kubernetes.io/use-regex: "true"
+              nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          spec:
+            ingressClassName: nginx
+            rules:
+              - host: <%= dnsLabel %>
+                http:
+                  paths:
+                    - path: /api/<%= shortName %>(/|$)(.*)
+                      pathType: ImplementationSpecific
+                      backend:
+                        service:
+                          name: <%= shortName %>
+                          port:
+                            number: 5000
+
+    - name: Apply backend ingress
+      shell: kubectl apply -f /tmp/ingress-<%= shortName %>.yaml
+    <% }); %>
+
+    - name: Ingress for frontend
+      copy:
+        dest: /tmp/ingress-frontend.yaml
+        content: |
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: ingress-frontend
+            annotations:
+              nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          spec:
+            ingressClassName: nginx
+            rules:
+              - host: <%= dnsLabel %>
+                http:
+                  paths:
+                    - path: /(?!api)(.*)
+                      pathType: ImplementationSpecific
+                      backend:
+                        service:
+                          name: frontend
+                          port:
+                            number: 80
+
+    - name: Apply frontend ingress
+      shell: kubectl apply -f /tmp/ingress-frontend.yaml
