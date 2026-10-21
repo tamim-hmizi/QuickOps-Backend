@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const ejs = require("ejs");
-const { execSync } = require("child_process");
+const { execSync, execFileSync } = require("child_process");
 const crypto = require("crypto");
 require("dotenv").config();
 
@@ -56,22 +56,33 @@ const generateAksCluster = async (project) => {
   fs.writeFileSync(jsonPath, rendered);
   console.log(`📦 cluster.json saved at: ${jsonPath}`);
 
-  execSync(
-    `aks-engine-azurestack generate --api-model ${jsonPath} --output-directory ${tmpDir}`,
+  execFileSync(
+    "aks-engine-azurestack",
+    ["generate", "--api-model", jsonPath, "--output-directory", tmpDir],
     { stdio: "inherit" }
   );
 
   console.log(`📢 Launching deploy with: ${jsonPath}`);
-  execSync(
-    `aks-engine-azurestack deploy \
-    -m ${jsonPath} \
-    --location ${location} \
-    --resource-group ${resourceGroupName} \
-    --subscription-id ${subscriptionId} \
-    --client-id ${process.env.client_id} \
-    --client-secret ${process.env.client_secret} \
-    --azure-env AzureStackCloud \
-    --force-overwrite`,
+  execFileSync(
+    "aks-engine-azurestack",
+    [
+      "deploy",
+      "-m",
+      jsonPath,
+      "--location",
+      location,
+      "--resource-group",
+      resourceGroupName,
+      "--subscription-id",
+      subscriptionId,
+      "--client-id",
+      process.env.client_id,
+      "--client-secret",
+      process.env.client_secret,
+      "--azure-env",
+      "AzureStackCloud",
+      "--force-overwrite",
+    ],
     { stdio: "inherit" }
   );
 

@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+const { execSync, execFileSync } = require("child_process");
 
 const {
   createOrUpdatePipeline,
@@ -133,11 +133,12 @@ const triggerPipeline = async (project) => {
         backendRepos,
       });
 
-      execSync(
-        `ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i '${dnsLabel},' ${playbookPath}`,
+      execFileSync(
+        "ansible-playbook",
+        ["-i", `${dnsLabel},`, playbookPath],
         {
           cwd: tmpDir,
-          env: process.env,
+          env: { ...process.env, ANSIBLE_HOST_KEY_CHECKING: "False" },
           stdio: "inherit",
         }
       );
@@ -179,11 +180,12 @@ const triggerPipeline = async (project) => {
         backendRepos,
       });
 
-      execSync(
-        `ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook  -i 'k8s-${dnsLabel},' ${playbookPath}`,
+      execFileSync(
+        "ansible-playbook",
+        ["-i", `k8s-${dnsLabel},`, playbookPath],
         {
           cwd: tmpDir,
-          env: process.env,
+          env: { ...process.env, ANSIBLE_HOST_KEY_CHECKING: "False" },
           stdio: "inherit",
         }
       );
