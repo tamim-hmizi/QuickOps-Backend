@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const { signToken } = require("../middleware/auth");
 
 exports.login = async (req, res) => {
     try {
@@ -24,6 +25,7 @@ exports.login = async (req, res) => {
                 email: user.email,
                 active: user.active
             },
+            token: signToken(user._id),
         });
 
     } catch (error) {

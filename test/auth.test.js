@@ -10,6 +10,7 @@ const creds = { email: "  Ops@Example.com ", password: "s3cure-passphrase" };
 
 describe("auth", () => {
   useDatabase("auth");
+  process.env.JWT_SECRET ??= "test-secret";
 
   it("registers with a normalized email and hashes the password", async () => {
     const res = await request(app).post("/api/auth/register").send(creds).expect(201);
@@ -32,6 +33,7 @@ describe("auth", () => {
     const res = await request(app).post("/api/auth/login").send(creds).expect(200);
     assert.equal(res.body.user.active, true);
     assert.equal(res.body.user.password, undefined);
+    assert.ok(res.body.token);
   });
 
   it("rejects a wrong password", async () => {

@@ -1,5 +1,6 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
+const mongoose = require("mongoose");
 const Project = require("../models/projectModel");
 
 const valid = {
@@ -7,6 +8,7 @@ const valid = {
   frontendRepo: "https://github.com/acme/shop-frontend",
   backendRepos: ["https://github.com/acme/shop-api.git"],
   githubToken: "ghp_example",
+  owner: new mongoose.Types.ObjectId(),
 };
 
 const errorsFor = (data) => Object.keys(new Project(data).validateSync()?.errors ?? {});
