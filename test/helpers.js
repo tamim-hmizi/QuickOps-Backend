@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
 function useDatabase(name) {
   before(async () => {
     const uri = process.env.MONGO_URI ?? "mongodb://127.0.0.1:27017";
-    await mongoose.connect(uri, { dbName: `test-quickops-${name}-${process.pid}` });
+    await mongoose.connect(uri, { dbName: `test-quickops-${name}-${process.pid}`, serverSelectionTimeoutMS: 60000 });
   });
   beforeEach(async () => {
     await Promise.all(
