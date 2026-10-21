@@ -13,7 +13,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/tamim-hmizi/QuickOps-Backend/issues"
@@ -41,5 +41,8 @@
   },
   "devDependencies": {
     "eslint": "^10.13.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

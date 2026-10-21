@@ -74,4 +74,4 @@ The server listens on `PORT` (default `5000`). There is no automated test suite 
 
 ## Project context
 
-RFC final year project, 2025, by Tamim Hmizi — https://tamim-hmizi.github.io/Portfolio/
+RFC final year project, 2025, by Tamim Hmizi: https://tamim-hmizi.github.io/Portfolio/
