@@ -30,6 +30,15 @@ templates/    Jenkinsfile, Terraform, Ansible and AKS Engine templates
 
 The frontend calls this API; the AI service provides the recommendation stored on each project. Jenkins, SonarQube, Nexus, Prometheus and Grafana run on the platform VM provisioned by QuickOps-IAC and configured by QuickOps-CAC.
 
+## Tests
+
+```bash
+docker run -d --name mongo -p 27017:27017 mongo:9.0
+MONGO_URI=mongodb://127.0.0.1:27017 npm test
+```
+
+The suite covers registration and login, project input validation (names and repository URLs are restricted because they reach Terraform, the Jenkinsfile and shell commands) and the Terraform generator. CI runs it with a MongoDB service container.
+
 ## Related repositories
 
 | Repository | Role |
