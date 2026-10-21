@@ -1,34 +1,29 @@
 const Project = require("../models/projectModel");
-require("dotenv").config();
 
-const createProject = async (projectData) => {
-  const project = new Project(projectData);
+// Every lookup is scoped to the owner, so users only ever see their own projects.
+const createProject = async (owner, projectData) => {
+  const project = new Project({ ...projectData, owner });
   await project.save();
-  return project;
+  return Project.findById(project._id);
 };
 
-const updateProject = async (id, updateData) => {
-  const project = await Project.findByIdAndUpdate(id, updateData, {
+const updateProject = (owner, id, updateData) =>
+  Project.findOneAndUpdate({ _id: id, owner }, updateData, {
     new: true,
     runValidators: true,
   });
-  return project;
-};
 
-const deleteProject = async (id) => {
-  const project = await Project.findByIdAndDelete(id);
-  return project;
-};
+const deleteProject = (owner, id) => Project.findOneAndDelete({ _id: id, owner });
 
-const getAllProjects = async () => {
-  const projects = await Project.find();
-  return projects;
-};
+const getAllProjects = (owner) => Project.find({ owner });
 
-const getProjectById = async (id) => {
-  const project = await Project.findById(id);
-  return project;
-};
+const getProjectById = (owner, id) => Project.findOne({ _id: id, owner });
+
+// Includes the GitHub token, for server-side use only.
+const getProjectWithToken = (owner, id) =>
+  Project.findOne({ _id: id, owner }).select("+githubToken");
+
+const ownsProjectNamed = async (owner, name) => Boolean(await Project.exists({ owner, name }));
 
 module.exports = {
   createProject,
@@ -36,4 +31,6 @@ module.exports = {
   deleteProject,
   getAllProjects,
   getProjectById,
+  getProjectWithToken,
+  ownsProjectNamed,
 };

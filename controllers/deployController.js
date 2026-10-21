@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const projectService = require("../services/projectService");
 const deployService = require("../services/deployService");
 const jenkinsService = require("../services/jenkinsService");
@@ -5,8 +6,11 @@ const jenkinsService = require("../services/jenkinsService");
 const deployProject = async (req, res) => {
   try {
     const { id } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, message: "Project not found" });
+    }
 
-    const project = await projectService.getProjectById(id);
+    const project = await projectService.getProjectWithToken(req.user.id, id);
     if (!project) {
       return res
         .status(404)
@@ -29,6 +33,10 @@ const deployProject = async (req, res) => {
 
 const getFullLog = async (req, res) => {
   const { jobName, buildId } = req.params;
+  // Jenkins jobs are named after projects, so only their owner may read the logs.
+  if (!(await projectService.ownsProjectNamed(req.user.id, jobName))) {
+    return res.status(404).json({ log: "Not found" });
+  }
   try {
     const log = await jenkinsService.getBuildLog(jobName, buildId);
     res.send({ log });

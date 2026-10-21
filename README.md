@@ -30,6 +30,18 @@ templates/    Jenkinsfile, Terraform, Ansible and AKS Engine templates
 
 The frontend calls this API; the AI service provides the recommendation stored on each project. Jenkins, SonarQube, Nexus, Prometheus and Grafana run on the platform VM provisioned by QuickOps-IAC and configured by QuickOps-CAC.
 
+## Authentication
+
+Login returns a JWT (8 hours). Every `/api/projects`, `/api/deploy` and `/api/logs` route requires it as `Authorization: Bearer <token>`, and each user only sees, changes and deploys their own projects. GitHub tokens stay on the server: they are never returned by the API, and the AI analysis (`POST /api/projects/:id/analyze`) calls QuickOps-AI from the backend. Project names are unique across users because they name the Jenkins job, Terraform state and DNS label. The API is rate-limited, with a stricter limit on login and registration.
+
+Set `JWT_SECRET` to a long random value (for example `openssl rand -hex 32`) and `AI_URL` to the QuickOps-AI service.
+
+**Upgrading:** projects created before this change have no owner and are hidden. Assign them once in MongoDB:
+
+```js
+db.projects.updateMany({ owner: { $exists: false } }, { $set: { owner: db.users.findOne({ email: "you@example.com" })._id } })
+```
+
 ## Tests
 
 ```bash

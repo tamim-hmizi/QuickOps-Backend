@@ -1,4 +1,9 @@
+const mongoose = require("mongoose");
+const axios = require("axios");
 const projectService = require("../services/projectService");
+
+const isId = (id) => mongoose.Types.ObjectId.isValid(id);
+const notFound = (res) => res.status(404).json({ success: false, message: "Project not found" });
 
 const createProject = async (req, res) => {
   const { name, frontendRepo, backendRepos, githubToken } = req.body;
@@ -10,7 +15,7 @@ const createProject = async (req, res) => {
         .json({ success: false, message: "Missing required fields" });
     }
 
-    const project = await projectService.createProject({
+    const project = await projectService.createProject(req.user.id, {
       name,
       frontendRepo,
       backendRepos,
@@ -19,6 +24,12 @@ const createProject = async (req, res) => {
 
     res.status(201).json({ success: true, project });
   } catch (error) {
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    if (error.code === 11000) {
+      return res.status(409).json({ success: false, message: "A project with this name already exists." });
+    }
     console.error("Error creating project:", error);
     res.status(500).json({ success: false, message: error.message });
   }
@@ -34,6 +45,8 @@ const updateProject = async (req, res) => {
     publicIp,
     dnsLabel,
   } = req.body;
+
+  if (!isId(id)) return notFound(res);
 
   try {
     const updateData = {};
@@ -52,7 +65,7 @@ const updateProject = async (req, res) => {
       });
     }
 
-    const updatedProject = await projectService.updateProject(id, updateData);
+    const updatedProject = await projectService.updateProject(req.user.id, id, updateData);
 
     if (!updatedProject) {
       return res.status(404).json({
@@ -71,14 +84,11 @@ const updateProject = async (req, res) => {
 
 const deleteProject = async (req, res) => {
   const { id } = req.params;
+  if (!isId(id)) return notFound(res);
 
   try {
-    const project = await projectService.getProjectById(id);
-    if (!project) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Project not found" });
-    }
+    const project = await projectService.getProjectById(req.user.id, id);
+    if (!project) return notFound(res);
 
     if (project.status === "deployed") {
       return res.status(400).json({
@@ -87,7 +97,7 @@ const deleteProject = async (req, res) => {
       });
     }
 
-    await projectService.deleteProject(id);
+    await projectService.deleteProject(req.user.id, id);
     res
       .status(200)
       .json({ success: true, message: "Project deleted successfully" });
@@ -99,7 +109,7 @@ const deleteProject = async (req, res) => {
 
 const getAllProjects = async (req, res) => {
   try {
-    const projects = await projectService.getAllProjects();
+    const projects = await projectService.getAllProjects(req.user.id);
     res.status(200).json({ success: true, projects });
   } catch (error) {
     console.error("Error fetching projects:", error);
@@ -109,13 +119,10 @@ const getAllProjects = async (req, res) => {
 
 const getProjectById = async (req, res) => {
   const { id } = req.params;
+  if (!isId(id)) return notFound(res);
   try {
-    const project = await projectService.getProjectById(id);
-    if (!project) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Project not found" });
-    }
+    const project = await projectService.getProjectById(req.user.id, id);
+    if (!project) return notFound(res);
     res.status(200).json({ success: true, project });
   } catch (error) {
     console.error("Error fetching project:", error);
@@ -123,7 +130,40 @@ const getProjectById = async (req, res) => {
   }
 };
 
+// Asks QuickOps-AI for a VM or Kubernetes recommendation. Runs on the server so
+// the stored GitHub token never reaches the browser.
+const analyzeProject = async (req, res) => {
+  const { id } = req.params;
+  if (!isId(id)) return notFound(res);
+
+  try {
+    const project = await projectService.getProjectWithToken(req.user.id, id);
+    if (!project) return notFound(res);
+
+    const aiUrl = (process.env.AI_URL || "http://localhost:8001").replace(/\/+$/, "");
+    const { data } = await axios.post(
+      `${aiUrl}/suggest`,
+      {
+        frontend: project.frontendRepo,
+        backends: project.backendRepos,
+        token: project.githubToken,
+      },
+      { timeout: 300000 }
+    );
+
+    const updatedProject = await projectService.updateProject(req.user.id, id, {
+      recommendation: data.recommendation,
+      reasoning: data.reasoning,
+    });
+    res.status(200).json({ success: true, updatedProject });
+  } catch (error) {
+    console.error("Error analyzing project:", error.message);
+    res.status(502).json({ success: false, message: "AI analysis failed" });
+  }
+};
+
 module.exports = {
+  analyzeProject,
   createProject,
   updateProject,
   deleteProject,

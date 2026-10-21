@@ -109,9 +109,9 @@ const triggerPipeline = async (project) => {
       if (!publicIp || !dnsLabel)
         throw new Error("Missing IP or DNS output from Terraform");
 
-      const mongoProject = await Project.findOne({ name });
+      const mongoProject = await Project.findById(project._id);
       if (mongoProject) {
-        await projectService.updateProject(mongoProject._id, {
+        await projectService.updateProject(mongoProject.owner, mongoProject._id, {
           publicIp,
           dnsLabel,
         });
@@ -226,9 +226,9 @@ const triggerPipeline = async (project) => {
 
       const updatedDns = `${name.toLowerCase()}.dc2.cloudapp.xpressazure.com`;
 
-      const mongoProject = await Project.findOne({ name });
+      const mongoProject = await Project.findById(project._id);
       if (mongoProject) {
-        await projectService.updateProject(mongoProject._id, {
+        await projectService.updateProject(mongoProject.owner, mongoProject._id, {
           publicIp: ingressIp,
           dnsLabel: updatedDns,
         });
@@ -264,9 +264,9 @@ const triggerPipeline = async (project) => {
     await createDashboard(name, backendRepos, deploymentChoice);
 
 
-    const mongoProject = await Project.findOne({ name });
+    const mongoProject = await Project.findById(project._id);
     if (mongoProject) {
-      await projectService.updateProject(mongoProject._id, {
+      await projectService.updateProject(mongoProject.owner, mongoProject._id, {
         status: "deployed",
       });
       console.log(`📦 Project "${name}" marked as deployed`);
