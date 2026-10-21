@@ -5,11 +5,12 @@ const app = require("../app");
 const User = require("../models/User");
 const { useDatabase } = require("./helpers");
 
-useDatabase("auth");
 
 const creds = { email: "  Ops@Example.com ", password: "s3cure-passphrase" };
 
 describe("auth", () => {
+  useDatabase("auth");
+
   it("registers with a normalized email and hashes the password", async () => {
     const res = await request(app).post("/api/auth/register").send(creds).expect(201);
     assert.equal(res.body.user.email, "ops@example.com");
