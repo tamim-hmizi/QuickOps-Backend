@@ -78,7 +78,11 @@ const triggerBuild = async (jobName) => {
 };
 
 const waitForBuildToFinish = async (jobName, buildId) => {
-  const url = `${JENKINS_URL}/job/${jobName}/${buildId}/api/json`;
+  const safeBuildId = Number(buildId);
+  if (!Number.isInteger(safeBuildId) || safeBuildId <= 0) {
+    throw new Error("Invalid buildId");
+  }
+  const url = `${JENKINS_URL}/job/${encodeURIComponent(jobName)}/${safeBuildId}/api/json`;
   for (let i = 0; i < 120; i++) {
     const { data } = await axios.get(url, { auth });
     if (!data.building) return data.result;
@@ -88,13 +92,21 @@ const waitForBuildToFinish = async (jobName, buildId) => {
 };
 
 const getBuildStages = async (jobName, buildId) => {
-  const url = `${JENKINS_URL}/job/${jobName}/${buildId}/wfapi/describe`;
+  const safeBuildId = Number(buildId);
+  if (!Number.isInteger(safeBuildId) || safeBuildId <= 0) {
+    throw new Error("Invalid buildId");
+  }
+  const url = `${JENKINS_URL}/job/${encodeURIComponent(jobName)}/${safeBuildId}/wfapi/describe`;
   const { data } = await axios.get(url, { auth });
   return data.stages;
 };
 
 const getBuildLog = async (jobName, buildId) => {
-  const url = `${JENKINS_URL}/job/${jobName}/${buildId}/consoleText`;
+  const safeBuildId = Number(buildId);
+  if (!Number.isInteger(safeBuildId) || safeBuildId <= 0) {
+    throw new Error("Invalid buildId");
+  }
+  const url = `${JENKINS_URL}/job/${encodeURIComponent(jobName)}/${safeBuildId}/consoleText`;
   const { data } = await axios.get(url, { auth });
   return data;
 };
