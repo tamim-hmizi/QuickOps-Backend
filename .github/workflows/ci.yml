@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       mongo:
-        image: mongo:8
+        image: mongo:9.0
         ports:
           - 27017:27017
     steps:
@@ -37,6 +37,7 @@ jobs:
             sleep 2
           done
           echo "MongoDB did not start" >&2
+          docker logs "$(docker ps -aq | head -1)" 2>&1 | tail -30 | sed 's/^/::error::/'
           exit 1
         shell: bash
       - name: Test

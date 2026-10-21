@@ -33,7 +33,7 @@ The frontend calls this API; the AI service provides the recommendation stored o
 ## Tests
 
 ```bash
-docker run -d --name mongo -p 27017:27017 mongo:8
+docker run -d --name mongo -p 27017:27017 mongo:9.0
 MONGO_URI=mongodb://127.0.0.1:27017 npm test
 ```
 
