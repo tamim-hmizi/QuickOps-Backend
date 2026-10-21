@@ -15,6 +15,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:8
+        ports:
+          - 27017:27017
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,5 +30,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=low
+      - name: Test
+        run: npm test
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017
       - name: Syntax check
         run: find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check

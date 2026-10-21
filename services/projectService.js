@@ -10,6 +10,7 @@ const createProject = async (projectData) => {
 const updateProject = async (id, updateData) => {
   const project = await Project.findByIdAndUpdate(id, updateData, {
     new: true,
+    runValidators: true,
   });
   return project;
 };

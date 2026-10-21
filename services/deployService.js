@@ -45,14 +45,16 @@ const triggerPipeline = async (project) => {
     "utf-8"
   );
 
-  const filledJenkinsfile = jenkinsTemplate
-    .replace(/{{projectName}}/g, name)
-    .replace(/{{frontendRepo}}/g, frontendRepo)
-    .replace(
-      /{{backendRepos}}/g,
-      backendRepos.map((url) => `"${url}"`).join(", ")
-    )
-    .replace(/{{githubToken}}/g, githubToken);
+  const values = {
+    projectName: name,
+    frontendRepo,
+    backendRepos: backendRepos.map((url) => `"${url}"`).join(", "),
+    githubToken,
+  };
+  // A replacer function keeps "$" in the token literal; a replacement string would not.
+  const filledJenkinsfile = jenkinsTemplate.replace(/{{(\w+)}}/g, (match, key) =>
+    Object.hasOwn(values, key) ? values[key] : match
+  );
 
   await createOrUpdatePipeline(name, filledJenkinsfile);
 
