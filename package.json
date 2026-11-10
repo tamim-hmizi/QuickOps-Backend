@@ -33,7 +33,7 @@
     "fs-extra": "^11.4.1",
     "handlebars": "^4.7.10",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.11.2",
+    "mongoose": "^9.11.4",
     "node-ssh": "^13.2.1",
     "openai": "^7.39.0",
     "prom-client": "^15.1.3",
